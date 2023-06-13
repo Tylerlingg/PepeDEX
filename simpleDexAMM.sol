@@ -5,16 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-interface ISimpleAMM {
-    function addLiquidity(uint256 amountToken) external payable;
-    function removeLiquidity(uint256 liquidity) external;
-    function swap(uint256 amountIn, uint256 maxSlippagePercentage, uint256 deadline) external payable;
-    function getAmountOut(uint256 amountIn) external view returns (uint256);
-    function getAmountETHOut(uint256 amountToken) external view returns (uint256);
-    function calculatePriceImpact(uint256 amountIn) external view returns (uint256);
-}
-
-contract SimpleAMM is ISimpleAMM, ReentrancyGuard {
+contract SimpleAMM is ReentrancyGuard {
     using SafeMath for uint256;
 
     IERC20 public immutable token;
@@ -69,7 +60,7 @@ contract SimpleAMM is ISimpleAMM, ReentrancyGuard {
 
         require(token.transfer(msg.sender, amountToken), "Failed to transfer tokens from contract to sender");
         payable(msg.sender).transfer(amountETH);
-        emit LiquidityRemoved(msg.sender, amountETH,amountToken);
+        emit LiquidityRemoved(msg.sender, amountETH, amountToken);
     }
 
     function swap(uint256 amountIn, uint256 maxSlippagePercentage, uint256 deadline) external payable nonReentrant {
@@ -78,37 +69,30 @@ contract SimpleAMM is ISimpleAMM, ReentrancyGuard {
         require(block.timestamp <= deadline, "Transaction expired");
 
         uint256 amountETHIn = msg.value;
-        uint256 amountTokenOut = getAmountOut(amountETHIn);
-        uint256 slippageAmount = amountTokenOut.mul(maxSlippagePercentage).div(100);
-        uint256 minimumAmountTokenOut = amountTokenOut.sub(slippageAmount);
-        require(minimumAmountTokenOut <= reserveToken, "Not enough liquidity");
+        uint256 amountTokenOut = amountETHIn.mul(reserveToken).div(reserveETH);
+        uint256 slippage = amountTokenOut.mul(maxSlippagePercentage).div(100);
+        require(amountIn >= amountTokenOut.sub(slippage), "Input amount too small due to slippage");
 
         reserveETH = reserveETH.add(amountETHIn);
         reserveToken = reserveToken.sub(amountTokenOut);
+
         require(token.transfer(msg.sender, amountTokenOut), "Failed to transfer tokens from contract to sender");
-        emit Swapped(msg.sender, amountETHIn, amountTokenOut);
+        emit Swapped(msg.sender, amountIn, amountTokenOut);
     }
 
-    function getAmountOut(uint256 amountIn) public view returns (uint256) {
-        require(reserveETH > 0 && reserveToken > 0, "Insufficient liquidity");
-        uint256 amountInWithFee = amountIn.mul(997);
-        uint256 numerator = amountInWithFee.mul(reserveToken);
-        uint256 denominator = reserveETH.mul(1000).add(amountInWithFee);
-        return numerator / denominator;
+    function getReserves() external view returns (uint256, uint256) {
+        return (reserveETH, reserveToken);
     }
 
-    function getAmountETHOut(uint256 amountToken) public view returns (uint256) {
-        require(reserveETH > 0 && reserveToken > 0, "Insufficient liquidity");
-        return amountToken.mul(reserveETH).div(reserveToken); // Reverse calculation for removing liquidity
+    function getLiquidity(address user) external view returns (uint256) {
+        return liquidityBalance[user];
     }
 
-    function calculatePriceImpact(uint256 amountIn) public view returns (uint256) {
-        require(reserveETH > 0 && reserveToken > 0, "Insufficient liquidity");
-        uint256 amountOut = getAmountOut(amountIn);
-        uint256 newReserveToken = reserveToken.sub(amountOut);
-        uint256 newReserveETH = reserveETH.add(amountIn);
-        uint256 newPrice = newReserveETH.mul(1e18).div(newReserveToken); // Scaled by 1e18 to handle decimals
-        uint256 oldPrice = reserveETH.mul(1e18).div(reserveToken); // Scaled by 1e18 to handle decimals
-        return oldPrice > newPrice ? oldPrice.sub(newPrice) : newPrice.sub(oldPrice); // Absolute value of price difference
+    function getTotalLiquidity() external view returns (uint256) {
+        return totalLiquidity;
+    }
+
+    function calculateOutgoingAmount(uint256 amountIn) external view returns (uint256) {
+        return amountIn.mul(reserveToken).div(reserveETH);
     }
 }
