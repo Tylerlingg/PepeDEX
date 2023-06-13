@@ -10,11 +10,11 @@
     <h1>Your Decentralized Exchange</h1>
 
     <form id="swap-form">
-        <label for="amount">Amount ETH to Swap:</label>
+        <label for="amount">Amount Token to Swap:</label>
         <input id="amount" type="number" step="any" min="0">
         
-        <label for="slippage">Maximum Slippage (%):</label>
-        <input id="slippage" type="number" step="any" min="0">
+        <label for="max-slippage-percentage">Max Slippage Percentage:</label>
+        <input id="max-slippage-percentage" type="number" min="0" max="3">
         
         <label for="deadline">Deadline (Unix timestamp):</label>
         <input id="deadline" type="number" min="0">
@@ -23,8 +23,11 @@
     </form>
 
     <form id="add-liquidity-form">
-        <label for="add-liquidity-amount">Amount ETH/Token to Add as Liquidity:</label>
-        <input id="add-liquidity-amount" type="number" step="any" min="0">
+        <label for="amount-eth">Amount ETH to Add as Liquidity:</label>
+        <input id="amount-eth" type="number" step="any" min="0">
+        
+        <label for="amount-token">Amount Token to Add as Liquidity:</label>
+        <input id="amount-token" type="number" step="any" min="0">
 
         <button type="submit">Add Liquidity</button>
     </form>
