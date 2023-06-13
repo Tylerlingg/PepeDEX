@@ -22,5 +22,21 @@
         <button type="submit">Swap</button>
     </form>
 
-    <button id="add-liquidity-button">Add Liquidity</button>
-    <button id="remove-liquidity-button">Remove Liquidity
+    <form id="add-liquidity-form">
+        <label for="add-liquidity-amount">Amount ETH/Token to Add as Liquidity:</label>
+        <input id="add-liquidity-amount" type="number" step="any" min="0">
+
+        <button type="submit">Add Liquidity</button>
+    </form>
+
+    <form id="remove-liquidity-form">
+        <label for="remove-liquidity-amount">Amount Liquidity to Remove:</label>
+        <input id="remove-liquidity-amount" type="number" step="any" min="0">
+
+        <button type="submit">Remove Liquidity</button>
+    </form>
+
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
