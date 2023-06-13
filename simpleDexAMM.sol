@@ -67,9 +67,4 @@ contract SimpleAMM is Ownable {
         require(reserveETH > 0 && reserveToken > 0, "Insufficient liquidity");
         return amountToken * reserveETH / reserveToken; // Reverse calculation for removing liquidity
     }
-
-    function withdrawToken(IERC20 _token, uint256 amount) external onlyOwner {
-        require(address(_token) != address(token), "Cannot withdraw Pepe tokens");
-        require(_token.transfer(msg.sender, amount), "Failed to transfer tokens");
-    }
 }
