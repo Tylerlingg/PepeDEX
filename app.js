@@ -7,7 +7,7 @@ const provider = new ethers.providers.Web3Provider(window.ethereum);
 const signer = provider.getSigner();
 const contract = new ethers.Contract(contractAddress, contractAbi, signer);
 
-// Set up form event listener
+// Set up form event listener for swap
 document.getElementById("swap-form").addEventListener("submit", async function(event) {
     event.preventDefault();
 
@@ -17,20 +17,36 @@ document.getElementById("swap-form").addEventListener("submit", async function(e
 
     try {
         const tx = await contract.swap(amount, slippage, deadline, { value: amount });
-        console.log(`Transaction hash: ${tx.hash}`);
-
-        const receipt = await tx.wait();
-        console.log(`Transaction was mined in block ${receipt.blockNumber}`);
+        alert(`Transaction sent with hash: ${tx.hash}`);
     } catch (error) {
-        console.error(`Error: ${error.message}`);
+        alert(`Error: ${error.message}`);
     }
 });
 
-// Set up button event listeners (add your own logic here)
-document.getElementById("add-liquidity-button").addEventListener("click", function() {
-    console.log("Add liquidity button clicked");
+// Set up form event listener for add liquidity
+document.getElementById("add-liquidity-form").addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const amount = ethers.utils.parseEther(document.getElementById("add-liquidity-amount").value);
+    
+    try {
+        const tx = await contract.addLiquidity(amount, { value: amount });
+        alert(`Transaction sent with hash: ${tx.hash}`);
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
 });
 
-document.getElementById("remove-liquidity-button").addEventListener("click", function() {
-    console.log("Remove liquidity button clicked");
+//Set up form event listener for remove liquidity
+document.getElementById("remove-liquidity-form").addEventListener("submit", async function(event) {
+    event.preventDefault();
+
+    const liquidity = ethers.utils.parseEther(document.getElementById("remove-liquidity-amount").value);
+
+    try {
+        const tx = await contract.removeLiquidity(liquidity);
+        alert(`Transaction sent with hash: ${tx.hash}`);
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
 });
