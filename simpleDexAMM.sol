@@ -69,10 +69,7 @@ contract SimpleAMM is ISimpleAMM, ReentrancyGuard {
 
         require(token.transfer(msg.sender, amountToken), "Failed to transfer tokens from contract to sender");
         payable(msg.sender).transfer(amountETH);
-        emit LiquidityRemoved(msg.sender, amountETH,Sorry, the response was cut off. Here's the continuation of the contract:
-
-```solidity
-        amountToken);
+        emit LiquidityRemoved(msg.sender, amountETH,amountToken);
     }
 
     function swap(uint256 amountIn, uint256 maxSlippagePercentage, uint256 deadline) external payable nonReentrant {
