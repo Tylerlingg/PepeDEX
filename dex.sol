@@ -4,19 +4,21 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-contract SimpleTokenSwap is Ownable, Pausable {
+contract SimpleTokenSwap is Ownable, Pausable, ReentrancyGuard {
     using SafeMath for uint256;
 
     IERC20 public token;
+    uint256 public totalSupply;
     uint256 public swapRate;
     uint256 public minimumSwapAmount;
     uint256 public maximumSwapAmount;
 
     event SwapRateChanged(address indexed changer, uint256 oldRate, uint256 newRate);
     event SwapLimitsChanged(address indexed changer, uint256 oldMinAmount, uint256 oldMaxAmount, uint256 newMinAmount, uint256 newMaxAmount);
-    event Swapped(address indexed user, uint256 amountIn, uint256 amountOut);
+    event Swapped(address indexed user, uint256 amountIn, uint256 amountOut, uint256 newBalance);
     event TokensWithdrawn(address account, uint256 amount, uint256 remainingBalance);
 
     constructor(IERC20 _token, uint256 _swapRate, uint256 _minimumSwapAmount, uint256 _maximumSwapAmount) {
@@ -27,19 +29,22 @@ contract SimpleTokenSwap is Ownable, Pausable {
         swapRate = _swapRate;
         minimumSwapAmount = _minimumSwapAmount;
         maximumSwapAmount = _maximumSwapAmount;
+        totalSupply = 0;
     }
 
-    function swap(uint256 amount) external whenNotPaused {
+    function swap(uint256 amount) external whenNotPaused nonReentrant {
         require(amount >= minimumSwapAmount, "Swap amount too low");
         require(amount <= maximumSwapAmount, "Swap amount too high");
 
         uint256 amountToSendBack = calculateSwap(amount);
-        require(token.balanceOf(address(this)) >= amountToSendBack, "Not enough tokens in the contract for swap");
+        require(totalSupply >= amountToSendBack, "Not enough tokens in the contract for swap");
 
+        totalSupply = totalSupply.sub(amountToSendBack);
+        
         require(token.transferFrom(msg.sender, address(this), amount), "Failed to transfer tokens from sender to contract");
         require(token.transfer(msg.sender, amountToSendBack), "Failed to transfer tokens from contract to sender");
 
-        emit Swapped(msg.sender, amount, amountToSendBack);
+        emit Swapped(msg.sender, amount, amountToSendBack, totalSupply);
     }
 
     function calculateSwap(uint256 amount) internal view returns (uint256) {
@@ -66,12 +71,19 @@ contract SimpleTokenSwap is Ownable, Pausable {
         emit SwapLimitsChanged(msg.sender, oldMinAmount, oldMaxAmount, _minimumSwapAmount, _maximumSwapAmount);
     }
 
-    function withdrawTokens(uint256 amount) external onlyOwner whenNotPaused {
-        require(token.balanceOf(address(this)) >= amount, "Not enough tokens in the contract to withdraw");
-
+    function withdrawTokens(uint256 amount) external onlyOwner whenNotPaused nonReentrant {
+        require(totalSupply >= amount, "Not enough tokens in the contract to withdraw");
+        totalSupply = totalSupply.sub(amount);
+        
         require(token.transfer(owner(), amount), "Failed to transfer tokens from contract to owner");
-        uint256 remainingBalance = token.balanceOf(address(this));
+        uint256 remainingBalance = totalSupply;
         
         emit TokensWithdrawn(msg.sender, amount, remainingBalance);
+    }
+
+    function setToken(IERC20 _token) external onlyOwner {
+        require(address(_token) != address(0), "Token address cannot be 0");
+        
+        token = _token;
     }
 }
