@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Your Decentralized Exchange</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Your Decentralized Exchange</h1>
+
+    <form id="swap-form">
+        <label for="amount">Amount ETH to Swap:</label>
+        <input id="amount" type="number" step="any" min="0">
+        
+        <label for="slippage">Maximum Slippage (%):</label>
+        <input id="slippage" type="number" step="any" min="0">
+        
+        <label for="deadline">Deadline (Unix timestamp):</label>
+        <input id="deadline" type="number" min="0">
+        
+        <button type="submit">Swap</button>
+    </form>
+
+    <button id="add-liquidity-button">Add Liquidity</button>
+    <button id="remove-liquidity-button">Remove Liquidity
