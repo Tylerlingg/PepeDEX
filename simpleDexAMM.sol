@@ -5,7 +5,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-contract SimpleAMM is ReentrancyGuard {
+interface ISimpleAMM {
+    function addLiquidity(uint256 amountToken) external payable;
+    function removeLiquidity(uint256 liquidity) external;
+    function swap(uint256 amountIn, uint256 maxSlippagePercentage, uint256 deadline) external payable;
+    function getAmountOut(uint256 amountIn) external view returns (uint256);
+    function getAmountETHOut(uint256 amountToken) external view returns (uint256);
+    function calculatePriceImpact(uint256 amountIn) external view returns (uint256);
+}
+
+contract SimpleAMM is ISimpleAMM, ReentrancyGuard {
     using SafeMath for uint256;
 
     IERC20 public immutable token;
@@ -24,8 +33,14 @@ contract SimpleAMM is ReentrancyGuard {
         token = _token;
     }
 
+    // Allow the contract to spend tokens on behalf of the user
+    function approveToken(uint256 amount) external {
+        require(token.approve(address(this), amount), "Token approval failed");
+    }
+
     function addLiquidity(uint256 amountToken) external payable nonReentrant {
         require(amountToken > 0 && msg.value > 0, "Cannot add zero liquidity");
+        require(token.allowance(msg.sender, address(this)) >= amountToken, "Token allowance too small");
 
         uint256 liquidity = msg.value;
         if (totalLiquidity != 0) {
@@ -43,8 +58,8 @@ contract SimpleAMM is ReentrancyGuard {
     function removeLiquidity(uint256 liquidity) external nonReentrant {
         require(liquidity > 0 && liquidityBalance[msg.sender] >= liquidity, "Cannot remove zero liquidity or liquidity that you did not add");
 
-        uint256 amountETH = reserveETH.mul(liquidity).div(totalLiquidity);
-        uint256 amountToken = reserveToken.mul(liquidity).div(totalLiquidity);
+        uint256 amountETH = liquidity.mul(reserveETH).div(totalLiquidity);
+        uint256 amountToken = liquidity.mul(reserveToken).div(totalLiquidity);
         require(amountETH > 0 && amountToken > 0, "Not enough liquidity");
 
         reserveETH = reserveETH.sub(amountETH);
@@ -54,12 +69,16 @@ contract SimpleAMM is ReentrancyGuard {
 
         require(token.transfer(msg.sender, amountToken), "Failed to transfer tokens from contract to sender");
         payable(msg.sender).transfer(amountETH);
-        emit LiquidityRemoved(msg.sender, amountETH, amountToken);
+        emit LiquidityRemoved(msg.sender, amountETH,Sorry, the response was cut off. Here's the continuation of the contract:
+
+```solidity
+        amountToken);
     }
 
-    function swap(uint256 amountIn, uint256 maxSlippagePercentage) external payable nonReentrant {
+    function swap(uint256 amountIn, uint256 maxSlippagePercentage, uint256 deadline) external payable nonReentrant {
         require(amountIn > 0 && msg.value > 0, "Cannot swap zero");
         require(maxSlippagePercentage <= MAX_SLIPPAGE_PERCENTAGE, "Slippage exceeds maximum acceptable percentage");
+        require(block.timestamp <= deadline, "Transaction expired");
 
         uint256 amountETHIn = msg.value;
         uint256 amountTokenOut = getAmountOut(amountETHIn);
@@ -75,7 +94,10 @@ contract SimpleAMM is ReentrancyGuard {
 
     function getAmountOut(uint256 amountIn) public view returns (uint256) {
         require(reserveETH > 0 && reserveToken > 0, "Insufficient liquidity");
-        return amountIn.mul(reserveToken).div(reserveETH); // Uniswap's pricing formula
+        uint256 amountInWithFee = amountIn.mul(997);
+        uint256 numerator = amountInWithFee.mul(reserveToken);
+        uint256 denominator = reserveETH.mul(1000).add(amountInWithFee);
+        return numerator / denominator;
     }
 
     function getAmountETHOut(uint256 amountToken) public view returns (uint256) {
