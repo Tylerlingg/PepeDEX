@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-contract pepeDex is ReentrancyGuard {
+contract SimpleAMM is ReentrancyGuard {
     IERC20 public immutable token; // ERC20 token that the contract will use
     mapping(address => uint256) public liquidityBalance; // Mapping to keep track of liquidity added by an address
     uint256 public totalLiquidity; // Total liquidity in the pool
@@ -89,19 +89,16 @@ contract pepeDex is ReentrancyGuard {
         emit LiquidityRemoved(msg.sender, amountETH, amountToken);
     }
     /**
-     * @notice Allows a user to swap ETH for Tokens.
-     * @param amountIn The amount of tokens the user expects to receive at minimum.
-     * @param maxSlippagePercentage The maximum percentage of slippage the user is willing to tolerate.
-     * @param deadline The latest timestamp the transaction is valid for.
-     *
-     * Slippage is the difference between the expected price of the trade and the price at which the trade is executed.
-     * High slippage usually happens in illiquid markets. To protect yourself from unexpected price changes during
-     * the execution of your trade, you can set a maximum acceptable slippage percentage. If the slippage exceeds
-     * this percentage, the transaction will fail.
-     * maxSlippagePercentage should be an integer value representing the percentage. For example, for a 1% slippage,
-     * maxSlippagePercentage should be set to 1. The contract has a global maximum slippage percentage set by
-     * MAX_SLIPPAGE_PERCENTAGE.
-     */
+    * @notice Allows a user to swap ETH for Tokens.
+    * @param amountIn The amount of tokens the user wants to swap.
+    * @param amountOutMin The minimum amount of tokens the user expects to receive.
+    * @param deadline The latest timestamp the transaction is valid for.
+    *
+    * Slippage is the difference between the expected price of the trade and the price at which the trade is executed.
+    * High slippage usually happens in illiquid markets. To protect yourself from unexpected price changes during
+    * the execution of your trade, you can set a maximum acceptable slippage percentage. This function uses a global
+    * maximum slippage percentage set by MAX_SLIPPAGE_PERCENTAGE.
+    */
     // Swap ETH for tokens
     function swap(uint256 amountIn, uint256 amountOutMin, uint256 deadline) external nonReentrant {
         require(block.timestamp <= deadline, "Transaction expired");
