@@ -5,12 +5,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
- * @title SimpleAMM
+ * @title pepeDexxyk
  * @dev A simple automated market maker (AMM) that allows users to swap tokens, add liquidity, and remove liquidity.
  * Liquidity providers can also claim their share of accumulated fees. This contract uses the x * y = k formula
  * for swaps.
  */
-contract SimpleAMM is ReentrancyGuard {
+contract pepeDexxyk is ReentrancyGuard {
     // ERC20 token to be used
     IERC20 public immutable token;
 
