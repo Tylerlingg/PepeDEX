@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 /**
- * @title SimpleAMM
+ * @title pepeDex
  * @dev A simple automated market maker (AMM) that allows users to swap tokens, add liquidity, and remove liquidity.
  * Liquidity providers can also claim their share of accumulated fees.
  */
-contract SimpleAMM is ReentrancyGuard {
+contract pepeDex is ReentrancyGuard {
     IERC20 public immutable token;
     mapping(address => uint256) public liquidityBalance;
     uint256 public totalLiquidity;
