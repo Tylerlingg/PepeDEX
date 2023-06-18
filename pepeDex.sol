@@ -8,13 +8,14 @@ import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 /**
  * @title SimpleAMM
  * @dev A simple automated market maker (AMM) that allows users to swap tokens, add liquidity, and remove liquidity.
- * The contract owner can also withdraw accumulated fees.
+ * Liquidity providers can also claim their share of accumulated fees.
  */
 contract SimpleAMM is ReentrancyGuard {
     IERC20 public immutable token;
     mapping(address => uint256) public liquidityBalance;
     uint256 public totalLiquidity;
     uint256 public accumulatedFees;
+    mapping(address => uint256) public lastAccumulatedFees;
 
     struct Reserves {
         uint256 reserveETH;
@@ -22,28 +23,20 @@ contract SimpleAMM is ReentrancyGuard {
     }
     Reserves public reserves;
 
-    uint256 public constant FEE_PERCENTAGE = 3;
+    uint256 public constant FEE_PERCENTAGE = 3; // Represents 0.3%
     AggregatorV3Interface internal priceFeed;
-
-    address public owner;
 
     event Swapped(address indexed user, uint256 amountIn, uint256 amountOut);
     event LiquidityAdded(address indexed user, uint256 amountETH, uint256 amountToken);
     event LiquidityRemoved(address indexed user, uint256 amountETH, uint256 amountToken);
-    event FeesWithdrawn(address indexed to, uint256 amount);
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "You are not the owner");
-        _;
-    }
+    event FeesClaimed(address indexed user, uint256 amount);
 
     /**
-     * @dev Constructor sets the token, owner and Chainlink oracle.
+     * @dev Constructor sets the token and Chainlink oracle.
      * @param _token The address of the ERC20 token.
      */
     constructor(IERC20 _token) {
         token = _token;
-        owner = msg.sender;
         priceFeed = AggregatorV3Interface(0x9326BFA02ADD2366b30bacB125260Af641031331);
     }
 
@@ -76,7 +69,7 @@ contract SimpleAMM is ReentrancyGuard {
      * @return The latest price.
      */
     function getLatestPrice() public view returns (int) {
-       (, , , int price, , , ) = priceFeed.latestRoundData();
+        (, int price, , , ) = priceFeed.latestRoundData();
         return price;
     }
 
@@ -91,7 +84,7 @@ contract SimpleAMM is ReentrancyGuard {
         uint256 amountToken = liquidity * reserves.reserveToken / totalLiquidity;
         require(amountETH > 0 && amountToken > 0, "Not enough liquidity");
 
-        reserves.reserveETH -= amountETH;
+        reserves.reserveETH-= amountETH;
         reserves.reserveToken -= amountToken;
         liquidityBalance[msg.sender] -= liquidity;
         totalLiquidity -= liquidity;
@@ -101,6 +94,7 @@ contract SimpleAMM is ReentrancyGuard {
         payable(msg.sender).transfer(amountETH);
         emit LiquidityRemoved(msg.sender, amountETH, amountToken);
     }
+
     /**
      * @dev Swap ETH for tokens.
      * @param amountIn Amount of tokens to swap in.
@@ -109,46 +103,48 @@ contract SimpleAMM is ReentrancyGuard {
      * @param deadline Transaction deadline timestamp.
      */
     function swap(uint256 amountIn, uint256 amountOutMin, uint256 maxSlippage, uint256 deadline) external nonReentrant {
-        require(block.timestamp <= deadline, "Transaction expired");
-        require(amountIn > 0 && amountOutMin > 0, "Invalid amounts");
-        require(maxSlippage <= 100, "Maximum slippage percentage cannot be more than 100");
-        require(token.allowance(msg.sender, address(this)) >= amountIn, "Token allowance too small");
+    require(block.timestamp <= deadline, "Transaction expired");
+    require(amountIn > 0 && amountOutMin > 0, "Invalid amounts");
+    require(maxSlippage <= 100, "Maximum slippage percentage cannot be more than 100");
+    require(token.allowance(msg.sender, address(this)) >= amountIn, "Token allowance too small");
 
-        int latestPrice = getLatestPrice();
-        uint256 scaleFactor = 1e18;
+    int latestPrice = getLatestPrice();
+    uint256 scaleFactor = 1e18;
 
-        reserves.reserveToken += amountIn;
-        reserves.reserveETH -= amountOutMin;
+    uint256 amountOut = (uint256(latestPrice) * amountIn * scaleFactor) / (reserves.reserveToken) / scaleFactor;
+    uint256 amountOutWithFee = amountOut * (100000 - FEE_PERCENTAGE) / 100000;
+    require(amountOutWithFee >= amountOutMin, "Insufficient output amount");
 
-        uint256 amountOut = (uint256(latestPrice) * amountIn * scaleFactor) / (reserves.reserveToken + amountIn) / scaleFactor;
-        uint256 amountOutWithFee = amountOut * (10000 - FEE_PERCENTAGE) / 10000;
-        require(amountOutWithFee >= amountOutMin, "Insufficient output amount");
+    accumulatedFees += amountOut - amountOutWithFee;
 
-        accumulatedFees += amountOut - amountOutWithFee;
+    uint256 slippage = amountOutWithFee * maxSlippage / 100;
+    require(amountOutWithFee - slippage <= amountOutMin, "Slippage too high");
 
-        uint256 slippage = amountOutWithFee * maxSlippage / 100;
-        require(amountOutWithFee - slippage <= amountOutMin, "Slippage too high");
+    reserves.reserveToken += amountIn;
+    reserves.reserveETH -= amountOutWithFee;
 
-        require(token.transferFrom(msg.sender, address(this), amountIn), "Failed to transfer tokens from sender to contract");
+    require(token.transferFrom(msg.sender, address(this), amountIn), "Failed to transfer tokens from sender to contract");
 
-        payable(msg.sender).transfer(amountOutWithFee);
-        emit Swapped(msg.sender, amountIn, amountOutWithFee);
-    }
+    payable(msg.sender).transfer(amountOutWithFee);
+    emit Swapped(msg.sender, amountIn, amountOutWithFee);
+}
+
 
     /**
-     * @dev Withdraw accumulated fees (only owner).
-     * @param to The address to send the fees to.
-     * @param amount The amount of fees to withdraw.
+     * @dev Claims accumulated fees for the liquidity provider.
      */
-    function withdrawFees(address to, uint256 amount) external onlyOwner nonReentrant {
-        require(amount > 0 && amount <= accumulatedFees, "Invalid amount to withdraw");
+    function claimFees() external nonReentrant {
+        uint256 totalUnclaimedFees = accumulatedFees - lastAccumulatedFees[msg.sender];
+        uint256 claimableFees = totalUnclaimedFees * liquidityBalance[msg.sender] / totalLiquidity;
 
-        accumulatedFees -= amount;
+        require(claimableFees > 0, "No fees to claim");
 
-        (bool success,) = to.call{value: amount}("");
-        require(success, "Failed to transfer accumulated fees");
+        lastAccumulatedFees[msg.sender] = accumulatedFees;
 
-        emit FeesWithdrawn(to, amount);
+        (bool success,) = msg.sender.call{value: claimableFees}("");
+        require(success, "Failed to transfer fees");
+
+        emit FeesClaimed(msg.sender, claimableFees);
     }
 
     /**
@@ -156,7 +152,7 @@ contract SimpleAMM is ReentrancyGuard {
      * This function is called when ETH is sent directly to the contract.
      * The ETH will be added to the contract's reserves.
      */
-    receive()    external payable {
+    receive() external payable {
         require(msg.value > 0, "Cannot deposit zero ETH");
         reserves.reserveETH += msg.value;
     }
@@ -168,5 +164,4 @@ contract SimpleAMM is ReentrancyGuard {
     fallback() external payable {
         revert("Sending ETH directly is not supported, use addLiquidity function.");
     }
-
 }
