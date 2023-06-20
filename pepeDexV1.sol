@@ -1,39 +1,61 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
-
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-
-/**
- * @title pepeDex
- * @dev A simple decentralized exchange for swapping ERC20 tokens for ETH.
- */
 contract pepeDex is ReentrancyGuard {
     IERC20 public immutable token;
     mapping(address => uint256) public liquidityBalance;
     uint256 public totalLiquidity;
     uint256 public accumulatedFees;
     mapping(address => uint256) public lastAccumulatedFees;
-
+    
     struct Reserves {
         uint256 reserveETH;
         uint256 reserveToken;
     }
     Reserves public reserves;
-
+    
     uint256 public constant FEE_PERCENTAGE = 3; // Represents 0.3%
-
+    
     address public uniswapPool;
-
+    
     event Swapped(address indexed user, uint256 amountIn, uint256 amountOut);
     event LiquidityAdded(address indexed user, uint256 amountETH, uint256 amountToken);
     event LiquidityRemoved(address indexed user, uint256 amountETH, uint256 amountToken);
     event FeesClaimed(address indexed user, uint256 amount);
 
-    // Interface for interacting with UniswapV3Pool
-    interface IUniswapV3Pool {
-        function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol);
+    /**
+     * @dev Constructor sets the token and Uniswap pool.
+     * @param _token The address of the ERC20 token.
+     * @param _uniswapPool The address of the Uniswap V3 pool for Pepe/ETH.
+     */
+    constructor(IERC20 _token, address _uniswapPool) {
+        token = _token;
+        uniswapPool = _uniswapPool;
     }
+
+    /**
+     * @dev Add liquidity to the pool.
+     * @param amountToken The amount of tokens to add as liquidity.
+     */
+    function addLiquidity(uint256 amountToken) external payable nonReentrant {
+        //...
+    }
+
+    /**
+     * @dev Retrieve the latest price from Uniswap V3.
+     * @return The latest price.
+     */
+    function getLatestPrice() public view returns (uint256) {
+        IUniswapV3Pool pool = IUniswapV3Pool(uniswapPool);
+        (uint160 sqrtPriceX96,,,) = pool.slot0();
+        uint256 price = uint256(sqrtPriceX96);
+        price = price * price * 1e18 / (1 << 192) / (1 << 192);
+        return price;
+    }
+
+    //...
+}
+
+interface IUniswapV3Pool {
+    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol);
+}
 
     /**
      * @dev Contract constructor initializes the token and Uniswap pool address.
