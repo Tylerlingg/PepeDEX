@@ -51,7 +51,7 @@ contract pepeDex is ReentrancyGuard {
      */
     function getLatestPrice() public view returns (uint256) {
         IUniswapV3Pool pool = IUniswapV3Pool(uniswapPool);
-        (uint160 sqrtPriceX96,,,) = pool.slot0();
+        (uint160 sqrtPriceX96, , , , , ) = pool.slot0();
         uint256 price = uint256(sqrtPriceX96);
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
@@ -82,15 +82,8 @@ contract pepeDex is ReentrancyGuard {
     }
 
     /**
-     * @dev Adds liquidity to the pool using ETH.
-     * @param amountToken The amount of tokens to add as liquidity.
-     */
-    function addLiquidityWithETH(uint256 amountToken) external payable nonReentrant {
-        addLiquidity(amountToken);
-    }
-    /**
      * @dev Swaps tokens for ETH.
-    * @param amountIn Amount of tokens to swap.
+     * @param amountIn Amount of tokens to swap.
      * @param amountOutMin Minimum amount of ETH to receive.
      * @param maxSlippage Maximum slippage percentage allowed.
      * @param deadline Timestamp after which the transaction is invalid.
@@ -105,7 +98,7 @@ contract pepeDex is ReentrancyGuard {
         uint256 scaleFactor = 1e18;
 
         // Calculate output amount based on input and reserves
-        uint256 amountOut = (latestPrice * amountIn * scaleFactor) / (reserves.reserveToken) / scaleFactor;
+        uint256 amountOut = (latestPrice * amountIn * scaleFactor) / reserves.reserveToken / scaleFactor;
         uint256 amountOutWithFee = amountOut * (100000 - FEE_PERCENTAGE) / 100000;
         require(amountOutWithFee >= amountOutMin, "Insufficient output amount");
 
@@ -128,7 +121,7 @@ contract pepeDex is ReentrancyGuard {
 
         // Transfer ETH to sender
         payable(msg.sender).transfer(amountOutWithFee);
-        
+
         emit Swapped(msg.sender, amountIn, amountOutWithFee);
     }
 
