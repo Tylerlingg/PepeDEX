@@ -1,20 +1,35 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.4;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+interface IUniswapV3Pool {
+    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol);
+}
+
+/**
+ * @title pepeDex
+ * @dev A simple automated market maker (AMM) that allows users to swap tokens, add liquidity, and remove liquidity.
+ * Liquidity providers can also claim their share of accumulated fees.
+ */
 contract pepeDex is ReentrancyGuard {
     IERC20 public immutable token;
     mapping(address => uint256) public liquidityBalance;
     uint256 public totalLiquidity;
     uint256 public accumulatedFees;
     mapping(address => uint256) public lastAccumulatedFees;
-    
+
     struct Reserves {
         uint256 reserveETH;
         uint256 reserveToken;
     }
     Reserves public reserves;
-    
+
     uint256 public constant FEE_PERCENTAGE = 3; // Represents 0.3%
-    
+
     address public uniswapPool;
-    
+
     event Swapped(address indexed user, uint256 amountIn, uint256 amountOut);
     event LiquidityAdded(address indexed user, uint256 amountETH, uint256 amountToken);
     event LiquidityRemoved(address indexed user, uint256 amountETH, uint256 amountToken);
@@ -49,6 +64,7 @@ contract pepeDex is ReentrancyGuard {
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
     }
+
 
     //...
 }
