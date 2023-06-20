@@ -106,19 +106,6 @@ interface IUniswapV3Pool {
 
         emit LiquidityAdded(msg.sender, ethSent, amountToken);
     }
-
-    /**
-     * @dev Gets the latest price of the token from the Uniswap pool.
-     * @return Latest price of the token.
-     */
-    function getLatestPrice() public view returns (uint256) {
-        IUniswapV3Pool pool = IUniswapV3Pool(uniswapPool);
-        (uint160 sqrtPriceX96,,,) = pool.slot0();
-        uint256 price = uint256(sqrtPriceX96);
-        price = price * price * 1e18 / (1 << 192) / (1 << 192);
-        return price;
-    }
-
     /**
      * @dev Swaps tokens for ETH.
     * @param amountIn Amount of tokens to swap.
