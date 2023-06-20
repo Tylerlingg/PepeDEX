@@ -46,14 +46,6 @@ contract pepeDex is ReentrancyGuard {
     }
 
     /**
-     * @dev Add liquidity to the pool.
-     * @param amountToken The amount of tokens to add as liquidity.
-     */
-    function addLiquidity(uint256 amountToken) external payable nonReentrant {
-        //...
-    }
-
-    /**
      * @dev Retrieve the latest price from Uniswap V3.
      * @return The latest price.
      */
@@ -64,6 +56,7 @@ contract pepeDex is ReentrancyGuard {
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
     }
+
     /**
      * @dev Adds liquidity to the exchange.
      * @param amountToken Amount of tokens to add as liquidity.
@@ -86,6 +79,14 @@ contract pepeDex is ReentrancyGuard {
         require(token.transferFrom(msg.sender, address(this), amountToken), "Failed to transfer tokens");
 
         emit LiquidityAdded(msg.sender, ethSent, amountToken);
+    }
+
+    /**
+     * @dev Adds liquidity to the pool using ETH.
+     * @param amountToken The amount of tokens to add as liquidity.
+     */
+    function addLiquidityWithETH(uint256 amountToken) external payable nonReentrant {
+        addLiquidity(amountToken);
     }
     /**
      * @dev Swaps tokens for ETH.
