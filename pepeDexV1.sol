@@ -64,24 +64,6 @@ contract pepeDex is ReentrancyGuard {
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
     }
-    
-   //...
-}
-
-interface IUniswapV3Pool {
-    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol);
-}
-
-    /**
-     * @dev Contract constructor initializes the token and Uniswap pool address.
-     * @param _token Address of the ERC20 token.
-     * @param _uniswapPool Address of the Uniswap pool.
-     */
-    constructor(IERC20 _token, address _uniswapPool) {
-        token = _token;
-        uniswapPool = _uniswapPool;
-    }
-
     /**
      * @dev Adds liquidity to the exchange.
      * @param amountToken Amount of tokens to add as liquidity.
