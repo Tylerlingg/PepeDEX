@@ -64,9 +64,8 @@ contract pepeDex is ReentrancyGuard {
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
     }
-
-
-    //...
+    
+   //...
 }
 
 interface IUniswapV3Pool {
