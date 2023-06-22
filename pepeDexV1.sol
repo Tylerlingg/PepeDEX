@@ -52,6 +52,8 @@ contract pepeDex is ReentrancyGuard {
     function getLatestPrice() public view returns (uint256) {
         IUniswapV3Pool pool = IUniswapV3Pool(uniswapPool);
         (uint160 sqrtPriceX96, , , , , ) = pool.slot0();
+        // The price is represented as the square root of the ratio between token amounts,
+        // adjusted by a factor of 2^96. To get the price, square the value and scale it down.
         uint256 price = uint256(sqrtPriceX96);
         price = price * price * 1e18 / (1 << 192) / (1 << 192);
         return price;
@@ -74,91 +76,100 @@ contract pepeDex is ReentrancyGuard {
         totalLiquidity += liquidity;
         liquidityBalance[msg.sender] += liquidity;
         reserves.reserveETH += ethSent;
-        reserves.reserveToken += amountToken;
+       reserves.reserveToken += amountToken;
+        lastAccumulatedFees[msg.sender] = accumulatedFees * liquidity / totalLiquidity;
 
-        require(token.transferFrom(msg.sender, address(this), amountToken), "Failed to transfer tokens");
+        token.transferFrom(msg.sender, address(this), amountToken);
 
         emit LiquidityAdded(msg.sender, ethSent, amountToken);
     }
 
     /**
-     * @dev Swaps tokens for ETH.
-     * @param amountIn Amount of tokens to swap.
-     * @param amountOutMin Minimum amount of ETH to receive.
-     * @param maxSlippage Maximum slippage percentage allowed.
-     * @param deadline Timestamp after which the transaction is invalid.
+     * @dev Removes liquidity from the exchange.
+     * @param amountLiquidity Amount of liquidity to remove.
      */
-    function swap(uint256 amountIn, uint256 amountOutMin, uint8 maxSlippage, uint256 deadline) external nonReentrant {
-        require(block.timestamp <= deadline, "Transaction expired");
-        require(amountIn > 0 && amountOutMin > 0, "Invalid amounts");
-        require(maxSlippage <= 100, "Maximum slippage percentage cannot be more than 100");
-        require(token.allowance(msg.sender, address(this)) >= amountIn, "Token allowance too small");
+    function removeLiquidity(uint256 amountLiquidity) external nonReentrant {
+        require(amountLiquidity > 0 && liquidityBalance[msg.sender] >= amountLiquidity, "Invalid liquidity amount");
 
-        uint256 latestPrice = getLatestPrice();
-        uint256 scaleFactor = 1e18;
+        uint256 ethAmount = reserves.reserveETH * amountLiquidity / totalLiquidity;
+        uint256 tokenAmount = reserves.reserveToken * amountLiquidity / totalLiquidity;
 
-        // Calculate output amount based on input and reserves
-        uint256 amountOut = (latestPrice * amountIn * scaleFactor) / reserves.reserveToken / scaleFactor;
-        uint256 amountOutWithFee = amountOut * (100000 - FEE_PERCENTAGE) / 100000;
-        require(amountOutWithFee >= amountOutMin, "Insufficient output amount");
+        reserves.reserveETH -= ethAmount;
+        reserves.reserveToken -= tokenAmount;
+        liquidityBalance[msg.sender] -= amountLiquidity;
+        totalLiquidity -= amountLiquidity;
 
-        // Accumulate fees
-        accumulatedFees += amountOut - amountOutWithFee;
+        (bool ethSuccess,) = msg.sender.call{value: ethAmount}("");
+        require(ethSuccess, "ETH transfer failed");
+        token.transfer(msg.sender, tokenAmount);
 
-        // Calculate slippage and ensure it is within the acceptable range
-        uint256 slippage = amountOutWithFee * maxSlippage / 100;
-        require(amountOutWithFee - slippage <= amountOutMin, "Slippage too high");
-
-        // Update reserves
-        reserves.reserveToken += amountIn;
-        reserves.reserveETH -= amountOutWithFee;
-
-        // Check if the contract has enough ETH to send
-        require(reserves.reserveETH >= amountOutWithFee, "Not enough ETH in reserves");
-
-        // Transfer tokens from sender to contract
-        require(token.transferFrom(msg.sender, address(this), amountIn), "Failed to transfer tokens from sender to contract");
-
-        // Transfer ETH to sender
-        payable(msg.sender).transfer(amountOutWithFee);
-
-        emit Swapped(msg.sender, amountIn, amountOutWithFee);
+        emit LiquidityRemoved(msg.sender, ethAmount, tokenAmount);
     }
 
     /**
-     * @dev Allows liquidity providers to claim fees.
+     * @dev Swaps ETH for tokens.
+     * @param amountOutMin Minimum amount of tokens expected to receive.
+     * @param maxSlippage Maximum acceptable slippage in percentage points (e.g., 5 for 5%).
+     */
+    function swap(uint256 amountOutMin, uint256 maxSlippage) external payable nonReentrant {
+        uint256 ethIn = msg.value;
+        require(ethIn > 0, "Cannot swap zero ETH");
+
+        uint256 amountOut = getAmountOut(ethIn);
+        uint256 slippage = amountOut * maxSlippage / 1000; // maxSlippage is in percentage points scaled by 10 (e.g., 5 for 0.5%)
+        uint256 amountOutWithSlippage = amountOut - slippage;
+        require(amountOutWithSlippage >= amountOutMin, "Slippage too high");
+
+        reserves.reserveETH += ethIn;
+        reserves.reserveToken -= amountOut;
+        accumulatedFees += ethIn * FEE_PERCENTAGE / 1000;
+
+        token.transfer(msg.sender, amountOutWithSlippage);
+
+        emit Swapped(msg.sender, ethIn, amountOutWithSlippage);
+    }
+
+    /**
+     * @dev Claims the accumulated fees.
      */
     function claimFees() external nonReentrant {
-        uint256 totalUnclaimedFees = accumulatedFees - lastAccumulatedFees[msg.sender];
-        uint256 claimableFees = totalUnclaimedFees * liquidityBalance[msg.sender] / totalLiquidity;
+        uint256 userLiquidity = liquidityBalance[msg.sender];
+        require(userLiquidity > 0, "No liquidity provided");
 
-        require(claimableFees > 0, "No fees to claim");
+        uint256 claimableFees = accumulatedFees * userLiquidity / totalLiquidity - lastAccumulatedFees[msg.sender];
 
-        // Update the last accumulated fees for the claimer
-        lastAccumulatedFees[msg.sender] = accumulatedFees;
+        lastAccumulatedFees[msg.sender] = accumulatedFees * userLiquidity / totalLiquidity;
 
-        // Transfer the claimable fees to the claimer
-        (bool success,) = msg.sender.call{value: claimableFees}("");
-        require(success, "Failed to transfer fees");
+        token.transfer(msg.sender, claimableFees);
 
         emit FeesClaimed(msg.sender, claimableFees);
     }
 
     /**
-     * @dev Fallback function that accepts ETH.
-     * This function is called when ETH is sent directly to the contract.
-     * The ETH will be added to the contract's reserves.
+     * @dev Calculates the amount of tokens that can be bought with a given amount of ETH.
+     * @param amountIn Amount of ETH.
+     * @return Amount of tokens.
      */
-    receive() external payable {
-        require(msg.value > 0, "Cannot deposit zero ETH");
-        reserves.reserveETH += msg.value;
+    function getAmountOut(uint256 amountIn) public view returns (uint256) {
+        uint256 amountInWithFee = amountIn * (1000 - FEE_PERCENTAGE);
+        uint256 numerator = amountInWithFee * reserves.reserveToken;
+        uint256 denominator = reserves.reserveETH * 1000 + amountInWithFee;
+        return numerator / denominator;
     }
 
     /**
-     * @dev This fallback function will be called if the receive() function is not present.
-     * It can be used to log that the contract received ETH.
+     * @dev Reverts the transaction if the call is not successful.
+     * Used as a low level call to implement transfer of ETH.
+     * @param to Address to transfer ETH to.
+     * @param value Amount of ETH to transfer.
      */
-    fallback() external payable {
-        revert("Sending ETH directly is not supported, use addLiquidity function.");
+    function safeTransferETH(address to, uint256 value) internal {
+        (bool success,) = to.call{value: value}("");
+        require(success, "ETH transfer failed");
     }
+
+    /**
+     * @dev Function to allow contract to receive ETH.
+     */
+    receive() external payable {}
 }
