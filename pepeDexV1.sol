@@ -4,6 +4,7 @@ pragma solidity ^0.8.4;
 // Importing required interfaces and security features from OpenZeppelin library
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 // Interface for interacting with Uniswap V3 pool
 interface IUniswapV3Pool {
@@ -12,6 +13,8 @@ interface IUniswapV3Pool {
 
 // Defining the pepeDex contract
 contract pepeDex is ReentrancyGuard {
+    using SafeMath for uint256;
+
     // State variables
     IERC20 public immutable token;
     mapping(address => uint256) public liquidityBalance;
@@ -55,19 +58,19 @@ contract pepeDex is ReentrancyGuard {
         IUniswapV3Pool pool = IUniswapV3Pool(uniswapPool);
         (uint160 sqrtPriceX96, , , , , ) = pool.slot0();
         uint256 price = uint256(sqrtPriceX96);
-        price = price * price * 1e18 / (1 << 192) / (1 << 192);
+        price = price.mul(price).mul(1e18).div(1 << 192).div(1 << 192);
         return price;
     }
 
     // Calculates the Time-Weighted Average Price (TWAP)
     function getTwapPrice() public view returns (uint256) {
         uint256 currentTime = block.timestamp;
-        uint256 timeElapsed = currentTime - lastPriceUpdateTime;
+        uint256 timeElapsed = currentTime.sub(lastPriceUpdateTime);
         uint256 currentPrice = getLatestPrice();
-        if (timeElapsed >TWAP_PERIOD) {
+        if (timeElapsed > TWAP_PERIOD) {
             timeElapsed = TWAP_PERIOD;
         }
-        return (lastPrice * (TWAP_PERIOD - timeElapsed) + currentPrice * timeElapsed) / TWAP_PERIOD;
+        return (lastPrice.mul(TWAP_PERIOD.sub(timeElapsed)).add(currentPrice.mul(timeElapsed))).div(TWAP_PERIOD);
     }
 
     // Internal function to update the TWAP
@@ -79,12 +82,15 @@ contract pepeDex is ReentrancyGuard {
     // Allows users to add liquidity to the pool
     function addLiquidity(uint256 amountToken) external payable nonReentrant {
         uint256 ethAmount = msg.value;
-        uint256 liquidityAmount = (ethAmount * totalLiquidity) / reserves.reserveETH + 1;
+        require(amountToken > 0, "Token amount should be greater than 0");
+        require(ethAmount > 0, "ETH amount should be greater than 0");
 
-        liquidityBalance[msg.sender] += liquidityAmount;
-        totalLiquidity += liquidityAmount;
-        reserves.reserveETH += ethAmount;
-        reserves.reserveToken += amountToken;
+        uint256 liquidityAmount = (ethAmount.mul(totalLiquidity)).div(reserves.reserveETH).add(1);
+
+        liquidityBalance[msg.sender] = liquidityBalance[msg.sender].add(liquidityAmount);
+        totalLiquidity = totalLiquidity.add(liquidityAmount);
+        reserves.reserveETH = reserves.reserveETH.add(ethAmount);
+        reserves.reserveToken = reserves.reserveToken.add(amountToken);
 
         token.transferFrom(msg.sender, address(this), amountToken);
 
@@ -105,11 +111,14 @@ contract pepeDex is ReentrancyGuard {
         uint256 amountOut = getAmountOut(amountIn);
         require(amountOut >= amountOutMin, "Slippage tolerance exceeded");
 
-        reserves.reserveToken -= amountOut;
-        reserves.reserveETH += amountIn;
+        reserves.reserveToken = reserves.reserveToken.sub(amountOut);
+        reserves.reserveETH = reserves.reserveETH.add(amountIn);
 
         // Update the last swap time for the user
         lastSwapTime[msg.sender] = block.timestamp;
+
+        // Update accumulated fees
+        accumulatedFees = accumulatedFees.add(amountIn.mul(FEE_PERCENTAGE).div(1000));
 
         // Update TWAP after swap
         updateTwap();
@@ -119,23 +128,23 @@ contract pepeDex is ReentrancyGuard {
 
     // Calculates the amount of tokens a user receives for a given amount of ETH
     function getAmountOut(uint256 amountIn) internal view returns (uint256) {
-        uint256 amountInWithFee = amountIn * (1000 - FEE_PERCENTAGE);
-        uint256 numerator = amountInWithFee * reserves.reserveETH;
-        uint256 denominator = reserves.reserveToken * 1000 + amountInWithFee;
-        return numerator / denominator;
+        uint256 amountInWithFee = amountIn.mul(1000 - FEE_PERCENTAGE);
+        uint256 numerator = amountInWithFee.mul(reserves.reserveETH);
+        uint256 denominator = reserves.reserveToken.mul(1000).add(amountInWithFee);
+        return numerator.div(denominator);
     }
 
     // Allows users to remove liquidity
     function removeLiquidity(uint256 liquidityAmount) external nonReentrant {
         require(liquidityBalance[msg.sender] >= liquidityAmount, "Not enough liquidity");
 
-        uint256 ethAmount = (reserves.reserveETH * liquidityAmount) / totalLiquidity;
-        uint256 tokenAmount = (reserves.reserveToken * liquidityAmount) / totalLiquidity;
+        uint256 ethAmount = (reserves.reserveETH.mul(liquidityAmount)).div(totalLiquidity);
+        uint256 tokenAmount = (reserves.reserveToken.mul(liquidityAmount)).div(totalLiquidity);
 
-        reserves.reserveETH -= ethAmount;
-        reserves.reserveToken -= tokenAmount;
-        liquidityBalance[msg.sender] -= liquidityAmount;
-        totalLiquidity -= liquidityAmount;
+        reserves.reserveETH = reserves.reserveETH.sub(ethAmount);
+        reserves.reserveToken = reserves.reserveToken.sub(tokenAmount);
+        liquidityBalance[msg.sender] = liquidityBalance[msg.sender].sub(liquidityAmount);
+        totalLiquidity = totalLiquidity.sub(liquidityAmount);
 
         payable(msg.sender).transfer(ethAmount);
         token.transfer(msg.sender, tokenAmount);
@@ -148,15 +157,32 @@ contract pepeDex is ReentrancyGuard {
 
     // Allows liquidity providers to claim fees
     function claimFees() external nonReentrant {
-        uint256 fees = (accumulatedFees * liquidityBalance[msg.sender]) / totalLiquidity - lastAccumulatedFees[msg.sender];
-        require(fees > 0, "No fees to claim");
+        uint256 newAccumulatedFees = accumulatedFees.mul(liquidityBalance[msg.sender]).div(totalLiquidity);
+        uint256 feesToClaim = newAccumulatedFees.sub(lastAccumulatedFees[msg.sender]);
 
-        lastAccumulatedFees[msg.sender] += fees;
-        token.transfer(msg.sender, fees);
+        require(feesToClaim > 0, "No fees to claim");
 
-        emit FeesClaimed(msg.sender, fees);
+        lastAccumulatedFees[msg.sender] = newAccumulatedFees;
+        reserves.reserveETH = reserves.reserveETH.sub(feesToClaim);
+
+        payable(msg.sender).transfer(feesToClaim);
+
+        emit FeesClaimed(msg.sender, feesToClaim);
     }
 
-    // . . . end . . .
+    // Fallback function to accept ETH
+    receive() external payable {}
 
+    // Helper function to ensure slippage and TWAP deviation are within limits
+    function validateSwap(uint256 amountIn, uint256 amountOut, uint8 maxSlippage, uint256 maxTwapDeviation) internal view {
+        uint256 amountOutExpected = getAmountOut(amountIn);
+        uint256 amountOutMinimum = amountOutExpected.mul(1000 - maxSlippage).div(1000);
+
+        require(amountOut >= amountOutMinimum, "Slippage tolerance exceeded");
+
+        uint256 currentTwap = getTwapPrice();
+        uint256 deviation = (lastPrice > currentTwap) ? lastPrice.sub(currentTwap) : currentTwap.sub(lastPrice);
+
+        require(deviation <= maxTwapDeviation, "TWAP deviation exceeded");
+    }
 }
