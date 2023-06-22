@@ -100,31 +100,28 @@ contract pepeDex is ReentrancyGuard {
         emit LiquidityAdded(msg.sender, ethAmount, amountToken);
     }
 
-    // Allows users to swap ETH for tokens
-    function swap(uint256 amountIn, uint256 amountOutMin, uint8 maxSlippage, uint256 maxTwapDeviation, uint256 deadline) external payable nonReentrant {
-        // Ensure that the transaction is not expired
-        require(block.timestamp <= deadline, "Transaction expired");
+// Allows users to swap ETH for tokens
+function swap(uint256 amountIn, uint256 amountOutMin, uint256 /* maxSlippage */, uint256 /* maxTwapDeviation */, uint256 deadline) external payable nonReentrant {
+    // Ensure that the transaction is not expired
+    require(block.timestamp <= deadline, "Transaction expired");
 
-        // Rate limiting: Ensure that the user cannot swap too frequently
-        require(block.timestamp >= lastSwapTime[msg.sender] + MINIMUM_TIME_BETWEEN_SWAPS, "Swap too soon");
+    // Rate limiting: Ensure that the user cannot swap too frequently
+    require(block.timestamp >= lastSwapTime[msg.sender] + MINIMUM_TIME_BETWEEN_SWAPS, "Swap too soon");
 
-        uint256 amountOut = getAmountOut(amountIn);
-        require(amountOut >= amountOutMin, "Slippage tolerance exceeded");
+    uint256 amountOut = getAmountOut(amountIn);
+    require(amountOut >= amountOutMin, "Slippage tolerance exceeded");
 
-        reserves.reserveToken = reserves.reserveToken.sub(amountOut);
-        reserves.reserveETH = reserves.reserveETH.add(amountIn);
+    reserves.reserveToken -= amountOut;
+    reserves.reserveETH += amountIn;
 
-        // Update the last swap time for the user
-        lastSwapTime[msg.sender] = block.timestamp;
+    // Update the last swap time for the user
+    lastSwapTime[msg.sender] = block.timestamp;
 
-        // Update accumulated fees
-        accumulatedFees = accumulatedFees.add(amountIn.mul(FEE_PERCENTAGE).div(1000));
+    // Update TWAP after swap
+    updateTwap();
 
-        // Update TWAP after swap
-        updateTwap();
-
-        emit Swapped(msg.sender, amountIn, amountOut);
-    }
+    emit Swapped(msg.sender, amountIn, amountOut);
+}
 
     // Calculates the amount of tokens a user receives for a given amount of ETH
     function getAmountOut(uint256 amountIn) internal view returns (uint256) {
